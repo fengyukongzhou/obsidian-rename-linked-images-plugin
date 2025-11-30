@@ -1,0 +1,11 @@
+{
+  "id": "rename-linked-images",
+  "name": "Rename Linked Images",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "重命名当前笔记中的所有图片文件，使用统一的命名规则",
+  "author": "iFlow CLI",
+  "authorUrl": "",
+  "fundingUrl": "",
+  "isDesktopOnly": false
+}
