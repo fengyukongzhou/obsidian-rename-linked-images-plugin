@@ -129,18 +129,31 @@ class RenameLinkedImagesPlugin extends Plugin {
 		const obsidianRegex = /!\[\[([^\]|#]+)(?:\|[^\]]*)?\]\]/g;
 		const markdownRegex = /!\[[^\]]*\]\(([^\s)]+)\)/g;
 		
-		const links = new Set();
+		const links = [];
+		const seen = new Set();
 		let match;
 		
+		// 重置正则表达式的lastIndex以确保从头开始匹配
+		obsidianRegex.lastIndex = 0;
 		while ((match = obsidianRegex.exec(content)) !== null) {
-			links.add(match[1].trim());
+			const fileName = match[1].trim();
+			if (!seen.has(fileName)) {
+				links.push(fileName);
+				seen.add(fileName);
+			}
 		}
 		
+		// 重置正则表达式的lastIndex
+		markdownRegex.lastIndex = 0;
 		while ((match = markdownRegex.exec(content)) !== null) {
-			links.add(match[1].trim());
+			const fileName = match[1].trim();
+			if (!seen.has(fileName)) {
+				links.push(fileName);
+				seen.add(fileName);
+			}
 		}
 		
-		return Array.from(links);
+		return links;
 	}
 
 	async askForPrefix() {
@@ -157,11 +170,10 @@ class RenameLinkedImagesPlugin extends Plugin {
 		
 		const prefix = customPrefix || this.settings.prefix;
 		
-		const validRegex = new RegExp(`^${prefix}${dateStr}-\\d{${this.settings.padLength}}\\.\\w+$`);
+		const validRegex = new RegExp(`^${prefix}${dateStr}-\d{${this.settings.padLength}}\.\w+$`);
 		const imagesToRename = imageLinks.filter(img => !validRegex.test(img));
 		
-		imagesToRename.sort();
-		
+		// 不再排序，保持文档中出现顺序
 		let index = this.settings.startIndex;
 		
 		for (const oldName of imagesToRename) {
