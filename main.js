@@ -23,21 +23,33 @@ class RenameLinkedImagesPlugin extends Plugin {
 			callback: () => this.renameImagesInCurrentNote(),
 		});
 		
+		console.log('已注册重命名图片命令');
+		
 		this.addCommand({
 			id: 'convert-wiki-to-markdown',
 			name: 'Wiki转Markdown链接',
-			callback: () => this.convertWikiToMarkdown(),
+			callback: () => {
+				console.log('Wiki转Markdown链接 命令被触发');
+				this.convertWikiToMarkdown();
+			},
 		});
+		
+		console.log('已注册Wiki转Markdown命令');
 		
 		this.addCommand({
 			id: 'convert-markdown-to-wiki',
 			name: 'Markdown转Wiki链接',
-			callback: () => this.convertMarkdownToWiki(),
+			callback: () => {
+				console.log('Markdown转Wiki链接 命令被触发');
+				this.convertMarkdownToWiki();
+			},
 		});
 		
-		
+		console.log('已注册Markdown转Wiki命令');
 		
 		this.addSettingTab(new RenameLinkedImagesSettingTab(this.app, this));
+		
+		console.log('插件加载完成');
 	}
 
 	onunload() {
@@ -71,6 +83,10 @@ class RenameLinkedImagesPlugin extends Plugin {
 			const cursor = editor?.getCursor();
 			const scrollInfo = editor?.getScrollInfo();
 			
+			// 获取文件信息，在读取内容前保存创建时间
+			const fileStat = activeFile.stat;
+			const originalCreateTime = fileStat.ctime || fileStat.mtime;
+			
 			const content = await this.app.vault.read(activeFile);
 			const imageLinks = this.extractImageLinks(content);
 			
@@ -84,10 +100,10 @@ class RenameLinkedImagesPlugin extends Plugin {
 				return;
 			}
 			
-			const renameMapping = this.generateRenameMapping(imageLinks, activeFile, prefix);
+			const renameMapping = this.generateRenameMapping(imageLinks, activeFile, prefix, originalCreateTime);
 			
 			if (Object.keys(renameMapping).length === 0) {
-				new Notice('没有需要重命名的图片');
+				new Notice('所有图片已使用该缩写命名，无需修改');
 				return;
 			}
 			
@@ -105,26 +121,23 @@ class RenameLinkedImagesPlugin extends Plugin {
 			
 			const newContent = this.updateContent(content, renameMapping);
 			
+			// 只有当内容真正改变时才修改文件
 			if (newContent !== content) {
-				// 注册文件修改事件监听器
-				const fileRef = this.app.vault.on('modify', (file) => {
-					if (file.path === activeFile.path) {
-						// 文件修改后稍等片刻再恢复状态
-						setTimeout(() => {
-							const restoredEditor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
-							if (restoredEditor && cursor) {
-								restoredEditor.setCursor(cursor);
-								if (scrollInfo) {
-									restoredEditor.scrollTo(scrollInfo.left, scrollInfo.top);
-								}
-							}
-							// 清理事件监听器
-							this.app.vault.offref(fileRef);
-						}, 50);
-					}
-				});
+				// 使用最基本的方式修改文件，避免触发编辑器事件
+				// 先禁用编辑器的自动保存
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				const originalDirty = view?.state?.mode === 'source';
 				
-				await this.app.vault.modify(activeFile, newContent);
+				try {
+					// 直接修改文件内容
+					await this.app.vault.modify(activeFile, newContent);
+				} catch (error) {
+					console.error('修改文件失败:', error);
+					throw error;
+				}
+			} else {
+				// 如果内容没有改变，直接返回，不触发文件修改
+				new Notice(`没有需要更新的内容`);
 			}
 			
 			new Notice(`成功重命名 ${renamedCount} 个图片文件`);
@@ -136,6 +149,7 @@ class RenameLinkedImagesPlugin extends Plugin {
 	}
 
 	async convertWikiToMarkdown() {
+		console.log('convertWikiToMarkdown 被调用');
 		const activeFile = this.app.workspace.getActiveFile();
 		
 		if (!activeFile) {
@@ -150,8 +164,32 @@ class RenameLinkedImagesPlugin extends Plugin {
 		
 		try {
 			const content = await this.app.vault.read(activeFile);
-			const newContent = content.replace(/!\[\[([^\]|#]+)(?:\|([^\]]*))?\]\]/g, (match, fileName, altText) => {
-				if (altText) {
+			console.log('读取文件内容成功，长度:', content.length);
+			
+			// 查找所有 Wiki 链接 - 使用更宽松的正则表达式
+			// 尝试多种可能的格式
+			const patterns = [
+				/!\[\[([^\|\]]+)(?:\|([^\]]*))?\]\]/g,  // 标准格式
+				/!\[\[([^\]]+)\]\]/g,  // 无描述格式
+				/!\[\[([^\|]+)\|([^\]]+)\]\]/g  // 有描述格式
+			];
+			
+			let wikiLinks = [];
+			patterns.forEach(pattern => {
+				const matches = content.match(pattern);
+				if (matches) {
+					wikiLinks = wikiLinks.concat(matches);
+				}
+			});
+			console.log('找到的 Wiki 链接:', wikiLinks);
+			
+			// 输出文件前100个字符以便调试
+			console.log('文件内容预览:', content.substring(0, 100));
+			
+			const newContent = content.replace(/!\[\[([^\|\]]+)(?:\|([^\]]*))?\]\]/g, (match, fileName, altText) => {
+				console.log('匹配到:', match, '文件名:', fileName, '描述:', altText);
+				// 处理 Wiki 图片链接
+				if (altText && altText.trim() !== '') {
 					return `![${altText}](${fileName})`;
 				} else {
 					return `![](${fileName})`;
@@ -167,6 +205,7 @@ class RenameLinkedImagesPlugin extends Plugin {
 				return;
 			}
 			
+			// 使用最基本的方式修改文件
 			await this.app.vault.modify(activeFile, newContent);
 			new Notice('成功转换Wiki链接为Markdown格式');
 			
@@ -177,6 +216,7 @@ class RenameLinkedImagesPlugin extends Plugin {
 	}
 
 	async convertMarkdownToWiki() {
+		console.log('convertMarkdownToWiki 被调用');
 		const activeFile = this.app.workspace.getActiveFile();
 		
 		if (!activeFile) {
@@ -191,7 +231,30 @@ class RenameLinkedImagesPlugin extends Plugin {
 		
 		try {
 			const content = await this.app.vault.read(activeFile);
-			const newContent = content.replace(/!\[([^\]]*)\]\(([^\s)]+)\)/g, (match, altText, fileName) => {
+			console.log('读取文件内容成功，长度:', content.length);
+			
+			// 查找所有 Markdown 链接 - 使用更宽松的正则表达式
+			const mdPatterns = [
+				/!\[([^\]]*)\]\(([^)]+)\)/g,  // 标准格式
+				/!\[\]\(([^)]+)\)/g,  // 无描述格式
+				/!\[([^\]]+)\]\(([^)]+)\)/g  // 有描述格式
+			];
+			
+			let mdLinks = [];
+			mdPatterns.forEach(pattern => {
+				const matches = content.match(pattern);
+				if (matches) {
+					mdLinks = mdLinks.concat(matches);
+				}
+			});
+			console.log('找到的 Markdown 链接:', mdLinks);
+			
+			// 输出文件前100个字符以便调试
+			console.log('文件内容预览:', content.substring(0, 100));
+			
+			const newContent = content.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, altText, fileName) => {
+				console.log('匹配到:', match, '描述:', altText, '文件名:', fileName);
+				// 处理 Markdown 图片链接
 				if (altText && altText.trim() !== '') {
 					return `![[${fileName}|${altText}]]`;
 				} else {
@@ -208,6 +271,7 @@ class RenameLinkedImagesPlugin extends Plugin {
 				return;
 			}
 			
+			// 使用最基本的方式修改文件
 			await this.app.vault.modify(activeFile, newContent);
 			new Notice('成功转换Markdown链接为Wiki格式');
 			
@@ -255,9 +319,11 @@ class RenameLinkedImagesPlugin extends Plugin {
 		});
 	}
 
-	generateRenameMapping(imageLinks, noteFile, customPrefix = null) {
+	generateRenameMapping(imageLinks, noteFile, customPrefix = null, originalCreateTime = null) {
 		const mapping = {};
-		const date = new Date(noteFile.stat.mtime);
+		// 使用传入的原始创建时间，如果没有则使用文件stat中的时间
+		const fileTime = originalCreateTime || noteFile.stat.ctime || noteFile.stat.mtime;
+		const date = new Date(fileTime);
 		const dateStr = this.formatDate(date);
 		
 		const prefix = customPrefix || this.settings.prefix;
@@ -362,6 +428,13 @@ class RenameLinkedImagesPlugin extends Plugin {
 				return `![${altText}](${newName})`;
 			}
 		});
+		
+		// 只有在确实进行了替换操作时才清理空行
+		if (newContent !== content) {
+			// 清理可能的多余空行，特别是文件开头
+			// 移除开头的多余空行（保留最多2个空行）
+			newContent = newContent.replace(/^\s{0,2}\n(\s{0,2}\n){2,}/g, '\n\n');
+		}
 		
 		return newContent;
 	}
