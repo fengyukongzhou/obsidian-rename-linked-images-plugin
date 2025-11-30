@@ -29,6 +29,12 @@ class RenameLinkedImagesPlugin extends Plugin {
 			callback: () => this.convertWikiToMarkdown(),
 		});
 		
+		this.addCommand({
+			id: 'convert-markdown-to-wiki',
+			name: 'Markdown转Wiki链接',
+			callback: () => this.convertMarkdownToWiki(),
+		});
+		
 		
 		
 		this.addSettingTab(new RenameLinkedImagesSettingTab(this.app, this));
@@ -148,7 +154,7 @@ class RenameLinkedImagesPlugin extends Plugin {
 				if (altText) {
 					return `![${altText}](${fileName})`;
 				} else {
-					return `![${fileName}](${fileName})`;
+					return `![](${fileName})`;
 				}
 			});
 			
@@ -163,6 +169,47 @@ class RenameLinkedImagesPlugin extends Plugin {
 			
 			await this.app.vault.modify(activeFile, newContent);
 			new Notice('成功转换Wiki链接为Markdown格式');
+			
+		} catch (error) {
+			console.error('转换链接格式失败:', error);
+			new Notice(`转换失败: ${error.message}`);
+		}
+	}
+
+	async convertMarkdownToWiki() {
+		const activeFile = this.app.workspace.getActiveFile();
+		
+		if (!activeFile) {
+			new Notice('请先打开一个笔记');
+			return;
+		}
+		
+		if (activeFile.extension !== 'md') {
+			new Notice('只支持Markdown文件');
+			return;
+		}
+		
+		try {
+			const content = await this.app.vault.read(activeFile);
+			const newContent = content.replace(/!\[([^\]]*)\]\(([^\s)]+)\)/g, (match, altText, fileName) => {
+				if (altText && altText.trim() !== '') {
+					return `![[${fileName}|${altText}]]`;
+				} else {
+					return `![[${fileName}]]`;
+				}
+			});
+			
+			if (newContent === content) {
+				new Notice('没有需要转换的Markdown链接');
+				return;
+			}
+			
+			if (!confirm('确定要将所有Markdown链接转换为Wiki格式吗？')) {
+				return;
+			}
+			
+			await this.app.vault.modify(activeFile, newContent);
+			new Notice('成功转换Markdown链接为Wiki格式');
 			
 		} catch (error) {
 			console.error('转换链接格式失败:', error);
