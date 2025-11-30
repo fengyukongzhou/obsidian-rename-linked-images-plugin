@@ -23,6 +23,12 @@ class RenameLinkedImagesPlugin extends Plugin {
 			callback: () => this.renameImagesInCurrentNote(),
 		});
 		
+		this.addCommand({
+			id: 'convert-wiki-to-markdown',
+			name: 'Wiki转Markdown链接',
+			callback: () => this.convertWikiToMarkdown(),
+		});
+		
 		
 		
 		this.addSettingTab(new RenameLinkedImagesSettingTab(this.app, this));
@@ -123,7 +129,46 @@ class RenameLinkedImagesPlugin extends Plugin {
 		}
 	}
 
-	
+	async convertWikiToMarkdown() {
+		const activeFile = this.app.workspace.getActiveFile();
+		
+		if (!activeFile) {
+			new Notice('请先打开一个笔记');
+			return;
+		}
+		
+		if (activeFile.extension !== 'md') {
+			new Notice('只支持Markdown文件');
+			return;
+		}
+		
+		try {
+			const content = await this.app.vault.read(activeFile);
+			const newContent = content.replace(/!\[\[([^\]|#]+)(?:\|([^\]]*))?\]\]/g, (match, fileName, altText) => {
+				if (altText) {
+					return `![${altText}](${fileName})`;
+				} else {
+					return `![${fileName}](${fileName})`;
+				}
+			});
+			
+			if (newContent === content) {
+				new Notice('没有需要转换的Wiki链接');
+				return;
+			}
+			
+			if (!confirm('确定要将所有Wiki链接转换为Markdown格式吗？')) {
+				return;
+			}
+			
+			await this.app.vault.modify(activeFile, newContent);
+			new Notice('成功转换Wiki链接为Markdown格式');
+			
+		} catch (error) {
+			console.error('转换链接格式失败:', error);
+			new Notice(`转换失败: ${error.message}`);
+		}
+	}
 
 	extractImageLinks(content) {
 		const obsidianRegex = /!\[\[([^\]|#]+)(?:\|[^\]]*)?\]\]/g;
