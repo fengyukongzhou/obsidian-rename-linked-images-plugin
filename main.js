@@ -23,7 +23,17 @@ class RenameLinkedImagesPlugin extends Plugin {
 			callback: () => this.renameImagesInCurrentNote(),
 		});
 		
+		this.addCommand({
+			id: 'convert-to-wiki-links',
+			name: '一键切换为Wiki链接',
+			callback: () => this.convertToWikiLinks(),
+		});
 		
+		this.addCommand({
+			id: 'convert-to-markdown-links',
+			name: '一键切换为Markdown链接',
+			callback: () => this.convertToMarkdownLinks(),
+		});
 		
 		this.addSettingTab(new RenameLinkedImagesSettingTab(this.app, this));
 	}
@@ -263,7 +273,107 @@ class RenameLinkedImagesPlugin extends Plugin {
 	}
 
 	escapeRegex(str) {
+		return str.replace(/[.*+?^${}()|[\]\\]/g, '\\escapeRegex(str) {
 		return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}');
+	}
+
+	async convertToWikiLinks() {
+		const activeFile = this.app.workspace.getActiveFile();
+		
+		if (!activeFile) {
+			new Notice('请先打开一个笔记');
+			return;
+		}
+		
+		if (activeFile.extension !== 'md') {
+			new Notice('只支持Markdown文件');
+			return;
+		}
+		
+		try {
+			const content = await this.app.vault.read(activeFile);
+			const newContent = this.convertLinkFormat(content, 'wiki');
+			
+			if (newContent === content) {
+				new Notice('没有需要转换的链接');
+				return;
+			}
+			
+			const confirmMsg = '确定要将所有图片链接转换为Wiki格式吗？';
+			if (!confirm(confirmMsg)) {
+				return;
+			}
+			
+			await this.app.vault.modify(activeFile, newContent);
+			new Notice('成功转换为Wiki链接格式');
+			
+		} catch (error) {
+			console.error('转换链接格式失败:', error);
+			new Notice(`转换失败: ${error.message}`);
+		}
+	}
+
+	async convertToMarkdownLinks() {
+		const activeFile = this.app.workspace.getActiveFile();
+		
+		if (!activeFile) {
+			new Notice('请先打开一个笔记');
+			return;
+		}
+		
+		if (activeFile.extension !== 'md') {
+			new Notice('只支持Markdown文件');
+			return;
+		}
+		
+		try {
+			const content = await this.app.vault.read(activeFile);
+			const newContent = this.convertLinkFormat(content, 'markdown');
+			
+			if (newContent === content) {
+				new Notice('没有需要转换的链接');
+				return;
+			}
+			
+			const confirmMsg = '确定要将所有图片链接转换为Markdown格式吗？';
+			if (!confirm(confirmMsg)) {
+				return;
+			}
+			
+			await this.app.vault.modify(activeFile, newContent);
+			new Notice('成功转换为Markdown链接格式');
+			
+		} catch (error) {
+			console.error('转换链接格式失败:', error);
+			new Notice(`转换失败: ${error.message}`);
+		}
+	}
+
+	convertLinkFormat(content, targetFormat) {
+		// 匹配所有图片链接的正则表达式
+		const wikiRegex = /!\[\[([^\]|#]+)(?:\|([^]]*))?\]\]/g;
+		const markdownRegex = /!\[([^\]]*)\]\(([^\s)]+)\)/g;
+		
+		let newContent = content;
+		
+		if (targetFormat === 'wiki') {
+			// 将Markdown链接转换为Wiki链接
+			newContent = newContent.replace(markdownRegex, (match, altText, fileName) => {
+				// 跳过已经是Wiki格式的链接
+				if (fileName.includes('[[') || fileName.includes(']]')) {
+					return match;
+				}
+				return altText ? `![[${fileName}|${altText}]]` : `![[${fileName}]]`;
+			});
+		} else if (targetFormat === 'markdown') {
+			// 将Wiki链接转换为Markdown链接
+			newContent = newContent.replace(wikiRegex, (match, fileName, altText) => {
+				return altText ? `![${altText}](${fileName})` : `![${fileName}](${fileName})`;
+			});
+		}
+		
+		return newContent;
 	}
 }
 
